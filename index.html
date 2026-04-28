@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM</title>
+<title>我的個人儀表板</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -726,17 +726,17 @@ async function callClaude(prompt) {
 }
 
 // ============ NEWS (RSS via multiple proxies) ============
-// Use feeds that reliably serve CORS-accessible RSS
 const RSS_FEEDS = {
   global: [
     'https://feeds.bbci.co.uk/news/business/rss.xml',
     'https://feeds.reuters.com/reuters/businessNews',
-    'https://www.ft.com/?format=rss',
+    'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines',
   ],
   taiwan: [
-    // Taiwan finance news via English sources
-    'https://feeds.bbci.co.uk/news/world/asia/rss.xml',
-    'https://feeds.reuters.com/reuters/technologyNews',
+    'https://www.cnyes.com/rss/cat/headline',
+    'https://udn.com/rssfeed/news/2/6644?ch=news',
+    'https://news.cnyes.com/news/cat/headline',
+    'https://www.moneydj.com/KMDJ/RSSFeedHandler.ashx?code=tw_stock',
   ]
 };
 
@@ -1108,27 +1108,92 @@ function markDone(n) {
 
 // ============ ENGLISH ============
 const VOCAB_BANK = [
+  // --- Adjectives ---
   {word:'substantial',phonetic:'/səbˈstænʃ.əl/',type:'adj',def:'Large in size, value, or importance',example:'The company made a substantial profit this year.',zh:'大量的；實質的',options:['大量的','微小的','臨時的','無聊的']},
-  {word:'elaborate',phonetic:'/ɪˈlæb.ər.ət/',type:'adj/v',def:'Containing a lot of careful detail; to explain with more detail',example:'She gave an elaborate explanation of the process.',zh:'詳細的；精心製作',options:['詳細的','簡單的','錯誤的','無效的']},
+  {word:'elaborate',phonetic:'/ɪˈlæb.ər.ət/',type:'adj',def:'Containing a lot of careful detail',example:'She gave an elaborate explanation of the process.',zh:'詳細的；精心製作的',options:['詳細的','簡單的','錯誤的','無效的']},
   {word:'inevitable',phonetic:'/ɪnˈev.ɪ.tə.bəl/',type:'adj',def:'Certain to happen and impossible to avoid',example:'Change is inevitable in any growing organization.',zh:'不可避免的',options:['不可避免的','可選擇的','臨時的','令人驚訝的']},
-  {word:'competent',phonetic:'/ˈkɒm.pɪ.tənt/',type:'adj',def:'Having enough skill or knowledge to do something well',example:'We need a competent manager for this project.',zh:'有能力的；勝任的',options:['有能力的','無能的','熱情的','嚴格的']},
-  {word:'feasible',phonetic:'/ˈfiː.zɪ.bəl/',type:'adj',def:'Possible and practical to do easily or conveniently',example:'Is it feasible to complete the project by Friday?',zh:'可行的；可能的',options:['可行的','不可能的','危險的','複雜的']},
-  {word:'fluctuate',phonetic:'/ˈflʌk.tʃu.eɪt/',type:'v',def:'To change frequently in level or amount',example:'Oil prices tend to fluctuate with global events.',zh:'波動；起伏',options:['波動','穩定','增加','減少']},
-  {word:'accumulate',phonetic:'/əˈkjuː.mjə.leɪt/',type:'v',def:'To gradually collect or increase',example:'Dust accumulates if you don\'t clean regularly.',zh:'積累；累積',options:['積累','消耗','轉移','分散']},
+  {word:'competent',phonetic:'/ˈkɒm.pɪ.tənt/',type:'adj',def:'Having enough skill to do something well',example:'We need a competent manager for this project.',zh:'有能力的；勝任的',options:['有能力的','無能的','熱情的','嚴格的']},
+  {word:'feasible',phonetic:'/ˈfiː.zɪ.bəl/',type:'adj',def:'Possible and practical to do easily',example:'Is it feasible to complete the project by Friday?',zh:'可行的；可能的',options:['可行的','不可能的','危險的','複雜的']},
   {word:'relevant',phonetic:'/ˈrel.ɪ.vənt/',type:'adj',def:'Related to a subject in an appropriate way',example:'Please submit relevant documents for review.',zh:'相關的；切題的',options:['相關的','無關的','重要的','複雜的']},
+  {word:'ambiguous',phonetic:'/æmˈbɪɡ.ju.əs/',type:'adj',def:'Having more than one possible meaning',example:'His ambiguous answer confused everyone.',zh:'模糊的；含糊的',options:['模糊的','清楚的','重要的','緊急的']},
+  {word:'comprehensive',phonetic:'/ˌkɒm.prɪˈhen.sɪv/',type:'adj',def:'Including everything that is necessary; complete',example:'We need a comprehensive report on the issue.',zh:'全面的；綜合的',options:['全面的','部分的','簡短的','錯誤的']},
+  {word:'consistent',phonetic:'/kənˈsɪs.tənt/',type:'adj',def:'Always behaving or happening in the same way',example:'Her performance has been consistent throughout the year.',zh:'一致的；持續的',options:['一致的','矛盾的','偶爾的','模糊的']},
+  {word:'efficient',phonetic:'/ɪˈfɪʃ.ənt/',type:'adj',def:'Working in a well-organized, quick way with no waste',example:'We need a more efficient way to process orders.',zh:'有效率的；效率高的',options:['有效率的','浪費的','複雜的','緩慢的']},
+  {word:'appropriate',phonetic:'/əˈprəʊ.pri.ət/',type:'adj',def:'Suitable or right for a particular situation',example:'Please wear appropriate clothing for the interview.',zh:'適當的；合適的',options:['適當的','不合適的','奇怪的','普通的']},
+  {word:'reliable',phonetic:'/rɪˈlaɪ.ə.bəl/',type:'adj',def:'Able to be trusted or depended on',example:'We need a reliable supplier for our components.',zh:'可靠的；值得信賴的',options:['可靠的','不穩定的','昂貴的','新的']},
+  {word:'crucial',phonetic:'/ˈkruː.ʃəl/',type:'adj',def:'Extremely important; essential',example:'This meeting is crucial to the success of the project.',zh:'至關重要的',options:['至關重要的','次要的','普通的','有趣的']},
+  {word:'innovative',phonetic:'/ˈɪn.ə.veɪ.tɪv/',type:'adj',def:'Using new methods or ideas; creative',example:'The company is known for its innovative products.',zh:'創新的；革新的',options:['創新的','傳統的','昂貴的','保守的']},
+  {word:'prominent',phonetic:'/ˈprɒm.ɪ.nənt/',type:'adj',def:'Important and well-known; very noticeable',example:'She is a prominent figure in the tech industry.',zh:'重要的；顯著的',options:['重要的','次要的','普通的','新興的']},
+  // --- Verbs ---
+  {word:'fluctuate',phonetic:'/ˈflʌk.tʃu.eɪt/',type:'v',def:'To change frequently in level or amount',example:'Oil prices tend to fluctuate with global events.',zh:'波動；起伏',options:['波動','穩定','增加','固定']},
+  {word:'accumulate',phonetic:'/əˈkjuː.mjə.leɪt/',type:'v',def:'To gradually collect or increase',example:'Evidence has accumulated suggesting the policy works.',zh:'積累；累積',options:['積累','消耗','轉移','分散']},
   {word:'undermine',phonetic:'/ˌʌn.dəˈmaɪn/',type:'v',def:'To weaken or damage something gradually',example:'Frequent conflicts can undermine team morale.',zh:'破壞；削弱',options:['破壞','加強','支持','分析']},
   {word:'implement',phonetic:'/ˈɪm.plɪ.ment/',type:'v',def:'To put a plan or system into action',example:'The company will implement new policies next month.',zh:'實施；執行',options:['實施','計畫','取消','評估']},
+  {word:'allocate',phonetic:'/ˈæl.ə.keɪt/',type:'v',def:'To give something officially to someone for a purpose',example:'The government will allocate more funds to education.',zh:'分配；撥款',options:['分配','收回','購買','調查']},
+  {word:'facilitate',phonetic:'/fəˈsɪl.ɪ.teɪt/',type:'v',def:'To make something possible or easier',example:'Technology can facilitate communication between teams.',zh:'促進；使便利',options:['促進','阻礙','忽略','分析']},
+  {word:'negotiate',phonetic:'/nɪˈɡəʊ.ʃi.eɪt/',type:'v',def:'To discuss something formally to reach an agreement',example:'Both sides agreed to negotiate a new contract.',zh:'協商；談判',options:['協商','拒絕','同意','命令']},
+  {word:'anticipate',phonetic:'/ænˈtɪs.ɪ.peɪt/',type:'v',def:'To think that something will probably happen',example:'We anticipate strong sales in the fourth quarter.',zh:'預期；期待',options:['預期','忘記','阻止','完成']},
+  {word:'collaborate',phonetic:'/kəˈlæb.ə.reɪt/',type:'v',def:'To work with someone else to achieve something',example:'The two firms decided to collaborate on the project.',zh:'合作；協作',options:['合作','競爭','拒絕','管理']},
+  {word:'evaluate',phonetic:'/ɪˈvæl.ju.eɪt/',type:'v',def:'To judge or calculate the quality or value of something',example:'We need to evaluate the risks before proceeding.',zh:'評估；評價',options:['評估','忽略','增加','刪除']},
+  {word:'generate',phonetic:'/ˈdʒen.ər.eɪt/',type:'v',def:'To produce or create something',example:'This campaign will generate more leads for the team.',zh:'產生；創造',options:['產生','消耗','阻止','搜尋']},
+  {word:'sustain',phonetic:'/səˈsteɪn/',type:'v',def:'To keep something going over a long period',example:'Can we sustain this level of growth for another year?',zh:'維持；支撐',options:['維持','終止','加速','取代']},
+  {word:'streamline',phonetic:'/ˈstriːm.laɪn/',type:'v',def:'To make a process simpler and more efficient',example:'We plan to streamline our hiring process.',zh:'精簡；使效率化',options:['精簡','複雜化','延遲','終止']},
+  {word:'prioritize',phonetic:'/praɪˈɒr.ɪ.taɪz/',type:'v',def:'To deal with things in order of importance',example:'You need to prioritize tasks to meet the deadline.',zh:'優先處理；排列優先順序',options:['優先處理','忽略','延後','隨機安排']},
+  {word:'demonstrate',phonetic:'/ˈdem.ən.streɪt/',type:'v',def:'To show evidence of something clearly',example:'She demonstrated strong leadership during the crisis.',zh:'展示；證明',options:['展示','隱藏','懷疑','刪除']},
+  // --- Nouns ---
+  {word:'revenue',phonetic:'/ˈrev.ɪ.njuː/',type:'n',def:'Income earned by a business or government',example:'The company\'s annual revenue exceeded $10 million.',zh:'收入；營收',options:['收入','支出','資產','利潤']},
+  {word:'initiative',phonetic:'/ɪˈnɪʃ.ə.tɪv/',type:'n',def:'A new plan for dealing with a particular problem',example:'The government launched a new healthcare initiative.',zh:'主動性；新方案',options:['新方案','舊習慣','法規','數據']},
+  {word:'consent',phonetic:'/kənˈsent/',type:'n/v',def:'Permission or agreement to do something',example:'You need to obtain consent before sharing personal data.',zh:'同意；許可',options:['同意','拒絕','命令','建議']},
+  {word:'momentum',phonetic:'/məˈmen.təm/',type:'n',def:'The force or speed that keeps something moving',example:'The project gained momentum after the first success.',zh:'動力；勢頭',options:['動力','阻力','風險','成本']},
+  {word:'benchmark',phonetic:'/ˈbentʃ.mɑːk/',type:'n',def:'A standard used for comparing other things',example:'This sales figure will serve as a benchmark for next year.',zh:'基準；標竿',options:['基準','障礙','方法','結果']},
+  {word:'leverage',phonetic:'/ˈliː.vər.ɪdʒ/',type:'n/v',def:'Power or influence used to achieve something',example:'They used their market leverage to negotiate better terms.',zh:'槓桿；影響力',options:['影響力','弱點','限制','義務']},
+  {word:'framework',phonetic:'/ˈfreɪm.wɜːk/',type:'n',def:'A system of rules or ideas used as a structure',example:'We need a clear framework for decision-making.',zh:'框架；架構',options:['框架','細節','結果','預算']},
+  {word:'perception',phonetic:'/pəˈsep.ʃən/',type:'n',def:'The way you notice or understand something',example:'Public perception of the brand has improved.',zh:'認知；看法',options:['認知','事實','法規','報告']},
+  {word:'incentive',phonetic:'/ɪnˈsen.tɪv/',type:'n',def:'Something that encourages you to do something',example:'Tax incentives can attract foreign investment.',zh:'誘因；激勵',options:['誘因','懲罰','阻礙','義務']},
+  {word:'constraint',phonetic:'/kənˈstreɪnt/',type:'n',def:'A limitation or restriction on what you can do',example:'Budget constraints forced us to cut the project scope.',zh:'限制；約束',options:['限制','自由','資源','計畫']},
+  {word:'transparency',phonetic:'/trænsˈpær.ən.si/',type:'n',def:'The quality of being open and honest',example:'Investors value transparency in financial reporting.',zh:'透明度；公開性',options:['透明度','隱密性','複雜性','靈活性']},
+  {word:'liability',phonetic:'/ˌlaɪ.əˈbɪl.ɪ.ti/',type:'n',def:'Legal responsibility for something',example:'The company accepted liability for the accident.',zh:'責任；負債',options:['責任','資產','收益','特權']},
+  {word:'deficit',phonetic:'/ˈdef.ɪ.sɪt/',type:'n',def:'The amount by which something falls short',example:'The government reported a large budget deficit.',zh:'赤字；不足',options:['赤字','盈餘','收入','投資']},
+  {word:'portfolio',phonetic:'/pɔːtˈfəʊ.li.əʊ/',type:'n',def:'A range of investments or products owned by someone',example:'She manages a diverse investment portfolio.',zh:'投資組合；作品集',options:['投資組合','單一股票','合約','預算']},
+  {word:'acquisition',phonetic:'/ˌæk.wɪˈzɪʃ.ən/',type:'n',def:'The act of buying or getting something',example:'The tech giant announced the acquisition of a startup.',zh:'收購；獲取',options:['收購','出售','合作','評估']},
+  // --- More Adjectives & Verbs ---
+  {word:'diverse',phonetic:'/daɪˈvɜːs/',type:'adj',def:'Very different from each other; having variety',example:'Our company has a diverse workforce from 20 countries.',zh:'多元的；多樣化的',options:['多元的','單一的','固定的','相同的']},
+  {word:'substantial',phonetic:'/səbˈstænʃ.əl/',type:'adj',def:'Large in size, value, or importance',example:'There has been substantial growth in renewable energy.',zh:'大量的；可觀的',options:['大量的','微小的','一般的','固定的']},
+  {word:'obsolete',phonetic:'/ˌɒb.səˈliːt/',type:'adj',def:'No longer used or needed; out of date',example:'Fax machines have become obsolete in most offices.',zh:'過時的；廢棄的',options:['過時的','現代的','流行的','重要的']},
+  {word:'vague',phonetic:'/veɪɡ/',type:'adj',def:'Not clearly expressed or defined',example:'The instructions were too vague to follow correctly.',zh:'模糊的；不清楚的',options:['模糊的','清楚的','詳細的','精確的']},
+  {word:'skeptical',phonetic:'/ˈskep.tɪ.kəl/',type:'adj',def:'Having doubts about something',example:'Many experts are skeptical about the new approach.',zh:'懷疑的；持保留態度的',options:['懷疑的','相信的','支持的','滿意的']},
+  {word:'retain',phonetic:'/rɪˈteɪn/',type:'v',def:'To keep or continue to have something',example:'The company struggled to retain experienced staff.',zh:'保留；留住',options:['保留','放棄','增加','轉移']},
+  {word:'monitor',phonetic:'/ˈmɒn.ɪ.tər/',type:'v',def:'To regularly check or observe something',example:'We will monitor the situation and report weekly.',zh:'監控；監測',options:['監控','忽略','改變','終止']},
+  {word:'compensate',phonetic:'/ˈkɒm.pən.seɪt/',type:'v',def:'To provide something good to reduce a bad effect',example:'The bonus was meant to compensate for the extra hours.',zh:'補償；彌補',options:['補償','懲罰','推遲','拒絕']},
+  {word:'verify',phonetic:'/ˈver.ɪ.faɪ/',type:'v',def:'To check that something is true or accurate',example:'Please verify your email address before submitting.',zh:'驗證；核實',options:['驗證','忽略','猜測','刪除']},
+  {word:'disrupt',phonetic:'/dɪsˈrʌpt/',type:'v',def:'To interrupt or cause disorder in something',example:'The new app is designed to disrupt the taxi industry.',zh:'打亂；顛覆',options:['打亂','維持','支持','推廣']},
+  {word:'revise',phonetic:'/rɪˈvaɪz/',type:'v',def:'To change or alter something, especially a text',example:'We need to revise the budget based on new data.',zh:'修改；修訂',options:['修改','保留','接受','忽略']},
+  {word:'justify',phonetic:'/ˈdʒʌs.tɪ.faɪ/',type:'v',def:'To give a good reason for something',example:'Can you justify the extra cost to the board?',zh:'合理化；辯護',options:['合理化','否認','反對','測試']},
+  {word:'quantify',phonetic:'/ˈkwɒn.tɪ.faɪ/',type:'v',def:'To measure or express something as a number',example:'It\'s hard to quantify the long-term benefits.',zh:'量化；以數字表示',options:['量化','忽略','估計','描述']},
+  {word:'attribute',phonetic:'/ˈæt.rɪ.bjuːt/',type:'v/n',def:'To say that something was caused by something else',example:'The success was attributed to teamwork.',zh:'歸因於；屬性',options:['歸因於','排除','反對','懷疑']},
 ];
 
 const PHRASE_BANK = [
-  {phrase:'in terms of',context:'In terms of performance, this model is superior.',meaning:'Regarding; with respect to',zh:'就…而言；在…方面'},
-  {phrase:'carry out',context:'We need to carry out further research.',meaning:'To do or complete a task',zh:'執行；實施'},
-  {phrase:'break down',context:'The negotiations broke down after two days.',meaning:'To fail or stop working',zh:'故障；崩潰；分解'},
-  {phrase:'take into account',context:'Please take into account the budget limits.',meaning:'To consider something',zh:'考慮進去；把…納入考量'},
+  {phrase:'in terms of',context:'In terms of performance, this quarter was outstanding.',meaning:'Regarding; with respect to',zh:'就…而言；在…方面'},
+  {phrase:'carry out',context:'We need to carry out further research before launching.',meaning:'To do or complete a task',zh:'執行；實施'},
+  {phrase:'break down',context:'The negotiations broke down after two days.',meaning:'To fail; to stop working; to separate into parts',zh:'故障；崩潰；分解'},
+  {phrase:'take into account',context:'Please take into account the budget limits.',meaning:'To consider something when making a decision',zh:'把…納入考量；考慮到'},
   {phrase:'bring about',context:'New technology can bring about major changes.',meaning:'To cause something to happen',zh:'帶來；導致（改變）'},
   {phrase:'as a result of',context:'Sales increased as a result of the campaign.',meaning:'Because of; due to',zh:'由於；作為…的結果'},
-  {phrase:'be in charge of',context:'She is in charge of the marketing department.',meaning:'To be responsible for',zh:'負責；主管'},
+  {phrase:'be in charge of',context:'She is in charge of the marketing department.',meaning:'To be responsible for managing something',zh:'負責；主管'},
   {phrase:'draw attention to',context:'The report draws attention to key risks.',meaning:'To make people notice something',zh:'引起注意；指出'},
+  {phrase:'keep track of',context:'It\'s important to keep track of your expenses.',meaning:'To monitor or stay informed about something',zh:'追蹤；記錄'},
+  {phrase:'look into',context:'The manager agreed to look into the complaint.',meaning:'To investigate or examine something',zh:'調查；研究'},
+  {phrase:'come up with',context:'Can you come up with a solution by Monday?',meaning:'To think of an idea or plan',zh:'想出；提出（方案）'},
+  {phrase:'point out',context:'She pointed out several errors in the report.',meaning:'To mention or indicate something',zh:'指出；提出'},
+  {phrase:'set up',context:'We plan to set up a new office in Taipei.',meaning:'To establish or arrange something',zh:'建立；設立'},
+  {phrase:'follow up',context:'I will follow up with the client after the meeting.',meaning:'To check on progress after an initial action',zh:'追蹤；後續跟進'},
+  {phrase:'cut down on',context:'The company is trying to cut down on waste.',meaning:'To reduce the amount of something',zh:'減少；削減'},
+  {phrase:'deal with',context:'We need to deal with this issue immediately.',meaning:'To handle or take action on a problem',zh:'處理；應對'},
+  {phrase:'put off',context:'The meeting was put off until next week.',meaning:'To delay or postpone something',zh:'推遲；延後'},
+  {phrase:'rule out',context:'We cannot rule out the possibility of a merger.',meaning:'To exclude or decide something is impossible',zh:'排除；否定可能性'},
+  {phrase:'make up for',context:'Extra sales in Q4 helped make up for earlier losses.',meaning:'To compensate for something negative',zh:'彌補；補償'},
+  {phrase:'fall short of',context:'The results fell short of our expectations.',meaning:'To fail to reach a target or standard',zh:'未達到；低於預期'},
 ];
 
 let vocabQueue = [];
