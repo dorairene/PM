@@ -733,10 +733,10 @@ const RSS_FEEDS = {
     'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines',
   ],
   taiwan: [
-    'https://www.cnyes.com/rss/cat/headline',
-    'https://udn.com/rssfeed/news/2/6644?ch=news',
-    'https://news.cnyes.com/news/cat/headline',
-    'https://www.moneydj.com/KMDJ/RSSFeedHandler.ashx?code=tw_stock',
+    'https://money.udn.com/rssfeed/news/1001/5588?ch=money',
+    'https://money.udn.com/rssfeed/news/1001/10930?ch=money',
+    'https://tw.news.yahoo.com/rss/finance',
+    'https://www.cna.com.tw/rss/dFINANCE.aspx',
   ]
 };
 
@@ -751,36 +751,43 @@ async function fetchRSSWithProxy(feedUrl) {
   for (const makeProxy of PROXIES) {
     try {
       const proxyUrl = makeProxy(feedUrl);
-      const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(9000) });
       if (!r.ok) continue;
       const text = await r.text();
-      // allorigins wraps in JSON; others return raw
+
       let xmlText = text;
-      try {
-        const j = JSON.parse(text);
-        xmlText = j.contents || j.body || text;
-      } catch {}
-      const parser = new DOMParser();
-      const xml = parser.parseFromString(xmlText, 'text/xml');
-      const items = [...xml.querySelectorAll('item')].slice(0, 4);
-      if (items.length === 0) continue;
-      const source = xml.querySelector('channel > title')?.textContent?.trim() || '';
-      return items.map(item => ({
-        headline: item.querySelector('title')?.textContent?.trim() || '',
-        summary: (item.querySelector('description')?.textContent || '')
-          .replace(/<!\[CDATA\[|\]\]>/g,'').replace(/<[^>]*>/g,'').trim().slice(0, 150) + '…',
-        date: (() => {
-          const raw = item.querySelector('pubDate')?.textContent || '';
-          try { return new Date(raw).toLocaleString('zh-TW', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
-          catch { return raw.slice(0,16); }
-        })(),
-        link: item.querySelector('link')?.textContent?.trim() ||
-              item.querySelector('guid')?.textContent?.trim() || '#',
-        source
-      }));
+      try { const j = JSON.parse(text); xmlText = j.contents || j.body || text; } catch {}
+      if (!xmlText || xmlText.length < 200) continue;
+
+      // Use regex to parse — handles CDATA far better than DOMParser
+      const itemMatches = [...xmlText.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)];
+      if (itemMatches.length === 0) continue;
+
+      const channelTitleM = xmlText.match(/<channel[^>]*>[\s\S]{0,500}?<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+      const channelTitle = (channelTitleM?.[1] || '').replace(/<[^>]*>/g,'').trim();
+
+      const getField = (block, tag) => {
+        const re = new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, 'i');
+        return (block.match(re)?.[1] || '').replace(/<[^>]*>/g,'').trim();
+      };
+
+      const parsed = itemMatches.slice(0, 5).map(m => {
+        const block = m[1];
+        const headline = getField(block, 'title');
+        const rawDesc  = getField(block, 'description').slice(0, 160);
+        const pubDate  = getField(block, 'pubDate');
+        const guid     = getField(block, 'guid');
+        const linkM    = block.match(/<link[^>]*>\s*(https?:\/\/[^\s<]+)/i);
+        const link     = linkM?.[1] || (guid.startsWith('http') ? guid : '#');
+        let dateStr = '';
+        try { if (pubDate) dateStr = new Date(pubDate).toLocaleString('zh-TW',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch {}
+        return { headline, summary: rawDesc ? rawDesc+'…' : '點擊閱讀全文', date: dateStr, link, source: channelTitle };
+      }).filter(n => n.headline.length > 3);
+
+      if (parsed.length > 0) return parsed;
     } catch(e) { continue; }
   }
-  throw new Error('all proxies failed');
+  throw new Error('all feeds/proxies failed');
 }
 
 async function loadNews() {
@@ -808,17 +815,19 @@ async function loadNews() {
 }
 
 function guessTag(headline) {
-  const h = headline.toLowerCase();
-  if(/stock|market|nasdaq|s&p|dow|股市/.test(h)) return '股市';
-  if(/trade|tariff|export|import|貿易|關稅/.test(h)) return '貿易';
-  if(/inflation|cpi|price|通膨|物價/.test(h)) return '通膨';
-  if(/fed|interest rate|rate|利率|升息/.test(h)) return '利率';
-  if(/tech|ai|semiconductor|晶片|半導體|chip/.test(h)) return '科技';
-  if(/oil|energy|crude|石油|能源/.test(h)) return '能源';
-  if(/gdp|growth|recession|景氣|成長/.test(h)) return 'GDP';
-  if(/gold|silver|金|銅|copper/.test(h)) return '大宗商品';
-  if(/taiwan|tsmc|台積電|台灣/.test(h)) return '台灣';
-  if(/asia|china|japan|korea|亞洲/.test(h)) return '亞洲';
+  const h = (headline || '').toLowerCase();
+  if (/stock|market|nasdaq|s&p|dow|股市|大盤|上漲|下跌/.test(h)) return '股市';
+  if (/trade|tariff|export|import|貿易|關稅|出口|進口/.test(h)) return '貿易';
+  if (/inflation|cpi|通膨|物價|漲價/.test(h)) return '通膨';
+  if (/fed|interest rate|利率|升息|降息|央行/.test(h)) return '利率';
+  if (/tech|ai|semiconductor|晶片|半導體|chip|科技|人工智慧/.test(h)) return '科技';
+  if (/oil|energy|crude|石油|能源/.test(h)) return '能源';
+  if (/gdp|growth|recession|景氣|成長|衰退/.test(h)) return 'GDP';
+  if (/gold|silver|黃金|銅|copper|鐵礦/.test(h)) return '大宗商品';
+  if (/tsmc|台積電/.test(h)) return '台積電';
+  if (/taiwan|台灣|台股|taiex/.test(h)) return '台灣';
+  if (/美股|美元|聯準會|fed|s&p/.test(h)) return '美股';
+  if (/外資|法人|主力|融資/.test(h)) return '籌碼';
   return '財經';
 }
 
