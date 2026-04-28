@@ -584,6 +584,94 @@
   }
   .phrase-zh { font-size: 0.85rem; color: var(--accent-en); margin-top: 0.25rem; }
 
+  /* News digest */
+  .digest-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .digest-source {
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+  }
+  .digest-summary {
+    font-size: 0.9rem;
+    color: var(--text2);
+    line-height: 1.8;
+    white-space: pre-line;
+  }
+  .digest-summary b { color: var(--text); font-weight: 500; }
+  .digest-bullet {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+    align-items: flex-start;
+    font-size: 0.875rem;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+  .digest-bullet-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent-news);
+    margin-top: 0.5rem;
+    flex-shrink: 0;
+  }
+  .digest-bullet-dot.tw { background: var(--accent-jp); }
+
+  /* Section result screen */
+  .section-result {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 600px;
+  }
+  .result-score-big {
+    font-size: 3rem;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--accent-en);
+    text-align: center;
+    margin-bottom: 0.25rem;
+  }
+  .result-label {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text3);
+    font-family: var(--mono);
+    margin-bottom: 1.5rem;
+  }
+  .wrong-list-title {
+    font-size: 0.7rem;
+    font-family: var(--mono);
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .wrong-item {
+    background: var(--bg3);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  .wrong-word { font-family: var(--mono); font-size: 0.9rem; color: #f87171; font-weight: 500; }
+  .wrong-meaning { font-size: 0.82rem; color: var(--text3); }
+  .wrong-correct { font-size: 0.82rem; color: var(--accent-en); }
+
   /* Util */
   .flex-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
   .small-muted { font-size: 0.75rem; color: var(--text3); font-family: var(--mono); }
@@ -615,17 +703,16 @@
 <!-- =================== NEWS PANEL =================== -->
 <div class="panel active" id="panel-news">
   <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-    <button class="refresh-btn" style="margin:0" onclick="loadNews()">↻ 即時搜尋新聞</button>
+    <button class="refresh-btn" style="margin:0" onclick="loadNews()">↻ 重新整理</button>
     <span class="small-muted" id="news-update-time"></span>
-    <span class="small-muted" style="color:var(--accent-news)">● Claude web_search 即時</span>
   </div>
   <div class="news-grid">
     <div>
-      <div class="sec-title">🌏 國際經濟</div>
+      <div class="sec-title">🌏 國際經濟摘要</div>
       <div id="news-global"><div class="loader"><div class="spin"></div>載入中...</div></div>
     </div>
     <div>
-      <div class="sec-title">🇹🇼 台灣經濟</div>
+      <div class="sec-title">🇹🇼 台灣經濟摘要</div>
       <div id="news-taiwan"><div class="loader"><div class="spin"></div>載入中...</div></div>
     </div>
   </div>
@@ -709,20 +796,36 @@ function showTab(name) {
   }
 }
 
-// ============ CLAUDE API (for JP lesson generation only) ============
+// ============ CLAUDE API (for JP + News summary) ============
+// Route through corsproxy.io to avoid CORS since GitHub Pages is a static frontend
 async function callClaude(prompt) {
-  const body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1000,
-    messages: [{role:'user', content: prompt}]
+  const payload = {
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 800,
+    messages: [{ role: 'user', content: prompt }]
   };
-  const r = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
-  const data = await r.json();
-  return data.content?.[0]?.text || '';
+
+  // Try direct first (works in some environments), then proxy
+  const endpoints = [
+    { url: 'https://api.anthropic.com/v1/messages', direct: true },
+    { url: 'https://corsproxy.io/?' + encodeURIComponent('https://api.anthropic.com/v1/messages'), direct: false },
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const text = data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
+      if (text) return text;
+    } catch(e) { continue; }
+  }
+  throw new Error('Claude API unavailable');
 }
 
 // ============ NEWS (RSS via multiple proxies) ============
@@ -791,8 +894,8 @@ async function fetchRSSWithProxy(feedUrl) {
 }
 
 async function loadNews() {
-  document.getElementById('news-global').innerHTML = '<div class="loader"><div class="spin"></div>載入國際新聞中...</div>';
-  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>載入財經新聞中...</div>';
+  document.getElementById('news-global').innerHTML = '<div class="loader"><div class="spin"></div>抓取新聞中...</div>';
+  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>抓取新聞中...</div>';
 
   async function tryFeeds(feeds) {
     for (const url of feeds) {
@@ -809,44 +912,55 @@ async function loadNews() {
     tryFeeds(RSS_FEEDS.taiwan)
   ]);
 
-  renderNewsItems('news-global', globalItems);
-  renderNewsItems('news-taiwan', taiwanItems);
+  await Promise.all([
+    summarizeNews('news-global', globalItems, 'global'),
+    summarizeNews('news-taiwan', taiwanItems, 'taiwan'),
+  ]);
+
   document.getElementById('news-update-time').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW');
 }
 
-function guessTag(headline) {
-  const h = (headline || '').toLowerCase();
-  if (/stock|market|nasdaq|s&p|dow|股市|大盤|上漲|下跌/.test(h)) return '股市';
-  if (/trade|tariff|export|import|貿易|關稅|出口|進口/.test(h)) return '貿易';
-  if (/inflation|cpi|通膨|物價|漲價/.test(h)) return '通膨';
-  if (/fed|interest rate|利率|升息|降息|央行/.test(h)) return '利率';
-  if (/tech|ai|semiconductor|晶片|半導體|chip|科技|人工智慧/.test(h)) return '科技';
-  if (/oil|energy|crude|石油|能源/.test(h)) return '能源';
-  if (/gdp|growth|recession|景氣|成長|衰退/.test(h)) return 'GDP';
-  if (/gold|silver|黃金|銅|copper|鐵礦/.test(h)) return '大宗商品';
-  if (/tsmc|台積電/.test(h)) return '台積電';
-  if (/taiwan|台灣|台股|taiex/.test(h)) return '台灣';
-  if (/美股|美元|聯準會|fed|s&p/.test(h)) return '美股';
-  if (/外資|法人|主力|融資/.test(h)) return '籌碼';
-  return '財經';
-}
-
-function renderNewsItems(id, items) {
+async function summarizeNews(id, items, type) {
   if (!items || items.length === 0) {
-    document.getElementById(id).innerHTML = `
-      <div class="err">無法取得新聞</div>
-      <p style="font-size:0.78rem;color:var(--text3);margin-top:0.5rem">請點擊「即時搜尋新聞」重試，或稍後再試</p>`;
+    document.getElementById(id).innerHTML = '<div class="err">無法取得新聞，請稍後重試</div>';
     return;
   }
-  document.getElementById(id).innerHTML = items.map(n => `
-    <div class="news-card" onclick="window.open('${n.link.replace(/'/g,"\\'")}','_blank')" style="cursor:pointer">
-      <div class="news-card-head">
-        <div class="news-headline">${n.headline}</div>
-        <span class="news-tag">${guessTag(n.headline)}</span>
-      </div>
-      <div class="news-sum">${n.summary}</div>
-      <div class="news-meta">${n.date}${n.source ? ' · ' + n.source : ''}</div>
-    </div>`).join('');
+
+  document.getElementById(id).innerHTML = '<div class="loader"><div class="spin"></div>AI 整理摘要中...</div>';
+
+  const headlines = items.map((n,i) => `${i+1}. ${n.headline}${n.summary && n.summary !== '點擊閱讀全文' ? '：' + n.summary.slice(0,60) : ''}`).join('\n');
+  const label = type === 'global' ? '國際經濟' : '台灣財經';
+  const dotClass = type === 'taiwan' ? 'tw' : '';
+  const source = items[0]?.source || '';
+
+  const prompt = `以下是今日${label}新聞標題與摘要：\n${headlines}\n\n請根據以上內容，用繁體中文整理成 4~5 點重點摘要。
+每點用「•」開頭，一點一行，每點約 25~45 字，要有具體資訊（數字、趨勢、原因、影響）。
+只輸出摘要點，不要標題、不要前言、不要結語。`;
+
+  try {
+    const summary = await callClaude(prompt);
+    const lines = summary.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 5 && (l.startsWith('•') || l.startsWith('·') || l.startsWith('-') || l.match(/^\d[\.\、]/)));
+
+    const renderLines = lines.length > 0 ? lines : summary.split('\n').filter(l => l.trim().length > 5);
+
+    document.getElementById(id).innerHTML = `
+      <div class="digest-box">
+        <div class="digest-source">${source ? source + ' · ' : ''}AI 摘要</div>
+        ${renderLines.map(l => {
+          const text = l.replace(/^[•·\-\d\.、\s]+/, '').trim();
+          return `<div class="digest-bullet"><span class="digest-bullet-dot ${dotClass}"></span><span>${text}</span></div>`;
+        }).join('')}
+      </div>`;
+  } catch(e) {
+    // Fallback: show original headlines as bullets
+    document.getElementById(id).innerHTML = `
+      <div class="digest-box">
+        <div class="digest-source">${source}（摘要生成失敗，顯示原標題）</div>
+        ${items.map(n => `<div class="digest-bullet"><span class="digest-bullet-dot ${dotClass}"></span><span>${n.headline}</span></div>`).join('')}
+      </div>`;
+  }
 }
 
 // ============ MARKET (Yahoo Finance with multiple proxy fallbacks) ============
@@ -1055,17 +1169,26 @@ async function loadLesson(idx) {
     <div class="loader"><div class="spin"></div>AI 生成課程內容中...</div>`;
 
     const prompt = `你是日語老師。請為「大家的日本語」第${l.n}課（主題：${l.title}）生成教學內容。
-回傳純JSON：{"vocab":[{"jp":"平假名","kana":"漢字","zh":"中文"}]（6個）,"grammar":[{"pattern":"文法","ex":"例句","zh":"中文"}]（2個）}
-只回JSON。`;
+請回傳純JSON（不要任何其他文字）：
+{"vocab":[{"jp":"平假名讀音","kana":"漢字寫法","zh":"中文意思"}],"grammar":[{"pattern":"文法句型","ex":"日文例句","zh":"中文翻譯"}]}
+vocab需要6個單字，grammar需要2個文法，只回JSON。`;
 
-    const raw = await callClaude(prompt);
     try {
-      const clean = raw.replace(/```json|```/g,'').trim();
-      const data = JSON.parse(clean);
-      l.vocab = data.vocab;
-      l.grammar = data.grammar;
-      l.aiGenerate = false;
-    } catch(e) {}
+      const raw = await callClaude(prompt);
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        if (data.vocab && data.grammar) {
+          l.vocab = data.vocab;
+          l.grammar = data.grammar;
+          l.aiGenerate = false;
+        }
+      }
+    } catch(e) {
+      // Show error but still render with placeholder
+      l.vocab = [{jp:'生成失敗',kana:'',zh:'請重新點擊課程'}];
+      l.grammar = [{pattern:'請重試',ex:'',zh:'點擊其他課程再回來'}];
+    }
   }
 
   renderLesson(l);
@@ -1205,12 +1328,16 @@ const PHRASE_BANK = [
   {phrase:'fall short of',context:'The results fell short of our expectations.',meaning:'To fail to reach a target or standard',zh:'未達到；低於預期'},
 ];
 
+
+const SECTION_SIZE = 30;
 let vocabQueue = [];
 let currentWord = 0;
+let sectionStart = 0;
 let score = {correct:0, total:0};
 let streak = 0;
 let answered = false;
 let currentPhraseIdx = 0;
+let wrongWords = [];
 
 function shuffle(arr) {
   const a = [...arr];
@@ -1223,29 +1350,39 @@ function shuffle(arr) {
 
 function initEnglish() {
   const mode = document.getElementById('en-mode').value;
-  score = {correct:0,total:0};
-  streak = 0;
-  currentWord = 0;
-  currentPhraseIdx = 0;
-  answered = false;
-  vocabQueue = shuffle(VOCAB_BANK); // shuffled, no repeats until full cycle
+  score = {correct:0, total:0};
+  streak = 0; currentWord = 0; sectionStart = 0;
+  currentPhraseIdx = 0; answered = false; wrongWords = [];
+  vocabQueue = shuffle(VOCAB_BANK);
   if(mode==='vocab') renderVocabQuiz();
   else renderPhrase();
 }
 
+function posInSection() { return currentWord - sectionStart; }
+
 function renderVocabQuiz() {
+  if (posInSection() >= SECTION_SIZE) { renderSectionResult(); return; }
   if (currentWord >= vocabQueue.length) {
-    // Completed one full cycle — reshuffle for next round
-    vocabQueue = shuffle(VOCAB_BANK);
-    currentWord = 0;
+    vocabQueue = [...vocabQueue, ...shuffle(VOCAB_BANK)]; // extend pool
   }
   const item = vocabQueue[currentWord];
   answered = false;
-
-  // Shuffle options
   const opts = shuffle(item.options);
+  const qNum = posInSection() + 1;
+  const dots = Array.from({length: SECTION_SIZE}, (_,i) => {
+    let col = 'var(--border2)';
+    if (i < qNum - 1) {
+      col = wrongWords.some(w => w.idx === sectionStart + i) ? '#f87171' : '#4ade80';
+    } else if (i === qNum - 1) col = 'var(--accent-en)';
+    return `<div style="width:5px;height:5px;border-radius:50%;background:${col};flex-shrink:0"></div>`;
+  }).join('');
 
   document.getElementById('quiz-area').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;gap:0.5rem">
+      <span style="font-size:0.72rem;color:var(--text3);font-family:var(--mono);white-space:nowrap">第 ${qNum}／${SECTION_SIZE} 題</span>
+      <div style="display:flex;gap:2px;flex-wrap:wrap;flex:1;justify-content:center">${dots}</div>
+      <span style="font-size:0.72rem;color:#4ade80;font-family:var(--mono);white-space:nowrap">✓ ${score.correct}</span>
+    </div>
     <div class="word-card-big">
       <div class="word-main">${item.word}</div>
       <div class="word-phonetic">${item.phonetic}</div>
@@ -1253,44 +1390,130 @@ function renderVocabQuiz() {
       <div class="word-definition">${item.def}</div>
       <div class="word-example">${item.example}</div>
     </div>
-
-    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)">選出正確的中文意思　${currentWord+1} / ${vocabQueue.length}</div>
-    <div class="en-options" id="options">
-      ${opts.map(o=>`<button class="option-btn" onclick="checkAnswer(this,'${o.replace(/'/g,"\\'")}','${item.zh.replace(/'/g,"\\'")}')">${o}</button>`).join('')}
+    <div style="font-size:0.78rem;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)">選出正確的中文意思</div>
+    <div class="en-options">
+      ${opts.map(o=>`<button class="option-btn" onclick="checkAnswer(this,${JSON.stringify(o)},${JSON.stringify(item.zh)})">${o}</button>`).join('')}
     </div>
-
-    <div class="en-controls">
-      <button class="option-btn" style="padding:0.5rem 1rem" onclick="nextWord()">跳過 →</button>
-      <span class="en-score">✓ ${score.correct} / ${score.total}</span>
-    </div>
-    <div class="word-streak">${streak>2?'<span class="streak-fire">🔥</span> 連答 '+streak+' 題！':''}</div>`;
+    <div class="en-controls" style="margin-top:0.75rem">
+      <button class="option-btn" style="padding:0.4rem 0.9rem;font-size:0.8rem" onclick="skipWord()">跳過</button>
+      <span class="word-streak" style="margin:0">${streak>2?`<span class="streak-fire">🔥</span> ${streak} 連答`:''}</span>
+    </div>`;
 }
 
 function checkAnswer(btn, chosen, correct) {
   if(answered) return;
   answered = true;
   score.total++;
-  const btns = document.querySelectorAll('.option-btn');
-  btns.forEach(b=>{
+  document.querySelectorAll('.option-btn').forEach(b => {
     b.disabled = true;
     if(b.textContent.trim() === correct) b.classList.add('correct');
   });
-  if(chosen===correct) { btn.classList.add('correct'); score.correct++; streak++; }
-  else { btn.classList.add('wrong'); streak=0; }
-
   const item = vocabQueue[currentWord];
-  const zh = document.createElement('div');
-  zh.className = 'word-zh';
-  zh.textContent = '中文：' + item.zh;
-  document.querySelector('.word-card-big').appendChild(zh);
-  document.querySelector('.en-score').textContent = `✓ ${score.correct} / ${score.total}`;
-  document.querySelector('.word-streak').innerHTML = streak>2?`<span class="streak-fire">🔥</span> 連答 ${streak} 題！`:'';
-
-  setTimeout(()=>{ currentWord++; renderVocabQuiz(); }, 1200);
+  if(chosen === correct) { btn.classList.add('correct'); score.correct++; streak++; }
+  else {
+    btn.classList.add('wrong'); streak = 0;
+    wrongWords.push({ idx: currentWord, word: item.word, zh: item.zh, chosen });
+  }
+  const card = document.querySelector('.word-card-big');
+  if(card) { const z=document.createElement('div'); z.className='word-zh'; z.textContent=item.zh; card.appendChild(z); }
+  setTimeout(() => { currentWord++; renderVocabQuiz(); }, 1100);
 }
 
-function nextWord() {
-  currentWord++;
+function skipWord() {
+  const item = vocabQueue[currentWord];
+  wrongWords.push({ idx: currentWord, word: item.word, zh: item.zh, chosen: '（跳過）' });
+  score.total++; streak = 0; currentWord++;
+  renderVocabQuiz();
+}
+
+function renderSectionResult() {
+  const sWrong = wrongWords.filter(w => w.idx >= sectionStart && w.idx < sectionStart + SECTION_SIZE);
+  const correct = SECTION_SIZE - sWrong.length;
+  const pct = Math.round(correct / SECTION_SIZE * 100);
+  const emoji = pct >= 90 ? '🏆' : pct >= 70 ? '🎉' : pct >= 50 ? '💪' : '📚';
+  const msg   = pct >= 90 ? '太厲害了！' : pct >= 70 ? '不錯！' : pct >= 50 ? '繼續加油！' : '多練習吧！';
+
+  document.getElementById('quiz-area').innerHTML = `
+    <div class="section-result">
+      <div class="result-score-big">${emoji} ${pct}%</div>
+      <div class="result-label">${correct} / ${SECTION_SIZE} 答對 · ${msg}</div>
+      ${sWrong.length > 0 ? `
+        <div class="wrong-list-title">需要複習的單字（${sWrong.length} 個）</div>
+        ${sWrong.map(w => `
+          <div class="wrong-item">
+            <div style="flex:1">
+              <div class="wrong-word">${w.word}</div>
+              <div class="wrong-meaning">正確：<span class="wrong-correct">${w.zh}</span></div>
+              <div style="font-size:0.72rem;color:var(--text3)">${w.chosen !== '（跳過）' ? '你選：' + w.chosen : '（已跳過）'}</div>
+            </div>
+          </div>`).join('')}
+        <div style="display:flex;gap:0.75rem;margin-top:1.25rem">
+          <button class="jp-nav-btn primary" onclick="reviewWrong()" style="flex:1">🔁 重練錯誤單字</button>
+          <button class="jp-nav-btn" onclick="startNextSection()" style="flex:1">下一輪 →</button>
+        </div>
+      ` : `
+        <div style="text-align:center;color:#4ade80;padding:1rem;font-size:0.9rem">🎯 全部答對！完美！</div>
+        <button class="jp-nav-btn primary" onclick="startNextSection()" style="width:100%;margin-top:0.75rem">繼續下一輪 →</button>
+      `}
+    </div>`;
+}
+
+function reviewWrong() {
+  const sWrong = wrongWords.filter(w => w.idx >= sectionStart && w.idx < sectionStart + SECTION_SIZE);
+  const wrongItems = sWrong.map(w => vocabQueue[w.idx]).filter(Boolean);
+  if (!wrongItems.length) { startNextSection(); return; }
+  vocabQueue = shuffle(wrongItems);
+  currentWord = 0; sectionStart = 0; wrongWords = [];
+  score = {correct:0, total:0}; streak = 0; answered = false;
+  window._reviewMode = true;
+  window._reviewSize = wrongItems.length;
+  renderReviewQuiz();
+}
+
+function renderReviewQuiz() {
+  if (currentWord >= (window._reviewSize || vocabQueue.length)) {
+    window._reviewMode = false;
+    vocabQueue = shuffle(VOCAB_BANK);
+    currentWord = 0; sectionStart = 0; wrongWords = [];
+    score = {correct:0, total:0}; streak = 0;
+    renderVocabQuiz();
+    return;
+  }
+  const item = vocabQueue[currentWord];
+  answered = false;
+  const opts = shuffle(item.options);
+  document.getElementById('quiz-area').innerHTML = `
+    <div style="margin-bottom:0.75rem">
+      <span style="font-size:0.72rem;color:#f472b6;font-family:var(--mono)">🔁 複習錯誤單字 ${currentWord+1}/${window._reviewSize}</span>
+    </div>
+    <div class="word-card-big" style="border-color:rgba(244,114,182,0.3)">
+      <div class="word-main">${item.word}</div>
+      <div class="word-phonetic">${item.phonetic}</div>
+      <span class="word-type-badge" style="background:rgba(244,114,182,0.1);color:#f472b6;border-color:rgba(244,114,182,0.3)">${item.type}</span>
+      <div class="word-definition">${item.def}</div>
+      <div class="word-example">${item.example}</div>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)">選出正確的中文意思</div>
+    <div class="en-options">
+      ${opts.map(o=>`<button class="option-btn" onclick="checkAnswerReview(this,${JSON.stringify(o)},${JSON.stringify(item.zh)})">${o}</button>`).join('')}
+    </div>`;
+}
+
+function checkAnswerReview(btn, chosen, correct) {
+  if(answered) return;
+  answered = true; score.total++;
+  document.querySelectorAll('.option-btn').forEach(b => { b.disabled=true; if(b.textContent.trim()===correct) b.classList.add('correct'); });
+  if(chosen===correct) { btn.classList.add('correct'); score.correct++; }
+  else btn.classList.add('wrong');
+  const item = vocabQueue[currentWord];
+  const card = document.querySelector('.word-card-big');
+  if(card) { const z=document.createElement('div'); z.className='word-zh'; z.style.color='#f472b6'; z.textContent=item.zh; card.appendChild(z); }
+  setTimeout(() => { currentWord++; renderReviewQuiz(); }, 1100);
+}
+
+function startNextSection() {
+  sectionStart = currentWord; wrongWords = [];
+  score = {correct:0, total:0}; streak = 0; answered = false;
   renderVocabQuiz();
 }
 
@@ -1311,7 +1534,7 @@ function renderPhrase() {
 }
 
 function prevPhrase() { currentPhraseIdx = Math.max(0, currentPhraseIdx-1); renderPhrase(); }
-function nextPhrase() { currentPhraseIdx++; renderPhrase(); }
+function nextPhrase() { currentPhraseIdx++; if(currentPhraseIdx>=PHRASE_BANK.length) currentPhraseIdx=0; renderPhrase(); }
 
 // ============ INIT ============
 initialized.news = true;
