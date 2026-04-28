@@ -725,48 +725,73 @@ async function callClaude(prompt) {
   return data.content?.[0]?.text || '';
 }
 
-// ============ NEWS (RSS via allorigins proxy) ============
+// ============ NEWS (RSS via multiple proxies) ============
+// Use feeds that reliably serve CORS-accessible RSS
 const RSS_FEEDS = {
   global: [
     'https://feeds.bbci.co.uk/news/business/rss.xml',
-    'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml',
+    'https://feeds.reuters.com/reuters/businessNews',
+    'https://www.ft.com/?format=rss',
   ],
   taiwan: [
-    'https://www.rti.org.tw/ajax/RSS/index/type/Finance',
-    'https://www.cna.com.tw/rss/dFINANCE.aspx',
+    // Taiwan finance news via English sources
+    'https://feeds.bbci.co.uk/news/world/asia/rss.xml',
+    'https://feeds.reuters.com/reuters/technologyNews',
   ]
 };
 
-async function fetchRSS(url) {
-  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const r = await fetch(proxy);
-  const data = await r.json();
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(data.contents, 'text/xml');
-  const items = [...xml.querySelectorAll('item')].slice(0, 4);
-  return items.map(item => ({
-    headline: item.querySelector('title')?.textContent?.trim() || '',
-    summary: (item.querySelector('description')?.textContent || '')
-      .replace(/<[^>]*>/g,'').trim().slice(0, 120) + '…',
-    date: (() => {
-      const raw = item.querySelector('pubDate')?.textContent || '';
-      try { return new Date(raw).toLocaleDateString('zh-TW', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch { return raw.slice(0,16); }
-    })(),
-    link: item.querySelector('link')?.textContent?.trim() || '#',
-    source: xml.querySelector('channel > title')?.textContent?.trim() || ''
-  }));
+// Try multiple CORS proxies in order
+const PROXIES = [
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+async function fetchRSSWithProxy(feedUrl) {
+  for (const makeProxy of PROXIES) {
+    try {
+      const proxyUrl = makeProxy(feedUrl);
+      const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) continue;
+      const text = await r.text();
+      // allorigins wraps in JSON; others return raw
+      let xmlText = text;
+      try {
+        const j = JSON.parse(text);
+        xmlText = j.contents || j.body || text;
+      } catch {}
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, 'text/xml');
+      const items = [...xml.querySelectorAll('item')].slice(0, 4);
+      if (items.length === 0) continue;
+      const source = xml.querySelector('channel > title')?.textContent?.trim() || '';
+      return items.map(item => ({
+        headline: item.querySelector('title')?.textContent?.trim() || '',
+        summary: (item.querySelector('description')?.textContent || '')
+          .replace(/<!\[CDATA\[|\]\]>/g,'').replace(/<[^>]*>/g,'').trim().slice(0, 150) + '…',
+        date: (() => {
+          const raw = item.querySelector('pubDate')?.textContent || '';
+          try { return new Date(raw).toLocaleString('zh-TW', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+          catch { return raw.slice(0,16); }
+        })(),
+        link: item.querySelector('link')?.textContent?.trim() ||
+              item.querySelector('guid')?.textContent?.trim() || '#',
+        source
+      }));
+    } catch(e) { continue; }
+  }
+  throw new Error('all proxies failed');
 }
 
 async function loadNews() {
   document.getElementById('news-global').innerHTML = '<div class="loader"><div class="spin"></div>載入國際新聞中...</div>';
-  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>載入台灣新聞中...</div>';
+  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>載入財經新聞中...</div>';
 
-  // Try each feed until one works
   async function tryFeeds(feeds) {
     for (const url of feeds) {
       try {
-        const items = await fetchRSS(url);
-        if (items.length > 0) return items;
+        const items = await fetchRSSWithProxy(url);
+        if (items && items.length > 0) return items;
       } catch(e) { continue; }
     }
     return null;
@@ -782,28 +807,30 @@ async function loadNews() {
   document.getElementById('news-update-time').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW');
 }
 
-// Tag categories from headline keywords
 function guessTag(headline) {
   const h = headline.toLowerCase();
   if(/stock|market|nasdaq|s&p|dow|股市/.test(h)) return '股市';
   if(/trade|tariff|export|import|貿易|關稅/.test(h)) return '貿易';
   if(/inflation|cpi|price|通膨|物價/.test(h)) return '通膨';
   if(/fed|interest rate|rate|利率|升息/.test(h)) return '利率';
-  if(/tech|ai|semiconductor|晶片|半導體/.test(h)) return '科技';
+  if(/tech|ai|semiconductor|晶片|半導體|chip/.test(h)) return '科技';
   if(/oil|energy|crude|石油|能源/.test(h)) return '能源';
   if(/gdp|growth|recession|景氣|成長/.test(h)) return 'GDP';
-  if(/gold|silver|金|銅/.test(h)) return '大宗商品';
+  if(/gold|silver|金|銅|copper/.test(h)) return '大宗商品';
   if(/taiwan|tsmc|台積電|台灣/.test(h)) return '台灣';
+  if(/asia|china|japan|korea|亞洲/.test(h)) return '亞洲';
   return '財經';
 }
 
 function renderNewsItems(id, items) {
   if (!items || items.length === 0) {
-    document.getElementById(id).innerHTML = '<div class="err">無法取得新聞，請稍後重試</div>';
+    document.getElementById(id).innerHTML = `
+      <div class="err">無法取得新聞</div>
+      <p style="font-size:0.78rem;color:var(--text3);margin-top:0.5rem">請點擊「即時搜尋新聞」重試，或稍後再試</p>`;
     return;
   }
   document.getElementById(id).innerHTML = items.map(n => `
-    <div class="news-card" onclick="window.open('${n.link}','_blank')" style="cursor:pointer">
+    <div class="news-card" onclick="window.open('${n.link.replace(/'/g,"\\'")}','_blank')" style="cursor:pointer">
       <div class="news-card-head">
         <div class="news-headline">${n.headline}</div>
         <span class="news-tag">${guessTag(n.headline)}</span>
@@ -813,79 +840,100 @@ function renderNewsItems(id, items) {
     </div>`).join('');
 }
 
-// ============ MARKET (Yahoo Finance - CORS friendly) ============
+// ============ MARKET (Yahoo Finance with multiple proxy fallbacks) ============
 const MARKET_SYMBOLS = [
-  { ticker: '^GSPC',    name: '標普 500',     label: 'S&P 500' },
-  { ticker: '^IXIC',    name: '那斯達克',      label: 'NASDAQ' },
-  { ticker: '^TWII',    name: '台股加權',      label: 'TAIEX' },
-  { ticker: 'TSM',      name: '台積電 ADR',    label: 'TSM' },
-  { ticker: '2330.TW',  name: '台積電',        label: '2330.TW' },
-  { ticker: 'GC=F',     name: '黃金現貨',      label: 'Gold $/oz' },
-  { ticker: 'HG=F',     name: '銅期貨',        label: 'Copper $/lb' },
-  { ticker: 'TIO=F',    name: '鐵礦石',        label: 'Iron Ore' },
+  { ticker: '^GSPC',   name: '標普 500',   label: 'S&P 500' },
+  { ticker: '^IXIC',   name: '那斯達克',   label: 'NASDAQ' },
+  { ticker: '^TWII',   name: '台股加權',   label: 'TAIEX' },
+  { ticker: 'TSM',     name: '台積電 ADR', label: 'TSM' },
+  { ticker: '2330.TW', name: '台積電',     label: '2330.TW' },
+  { ticker: 'GC=F',    name: '黃金現貨',   label: 'Gold $/oz' },
+  { ticker: 'HG=F',    name: '銅期貨',     label: 'Copper $/lb' },
+  { ticker: 'TIO=F',   name: '鐵礦石',     label: 'Iron Ore' },
 ];
 
+// Yahoo Finance v8 chart API — try multiple proxies
 async function fetchYahooQuote(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const r = await fetch(proxy);
-  const outer = await r.json();
-  const data = JSON.parse(outer.contents);
-  const meta = data?.chart?.result?.[0]?.meta;
-  if (!meta) throw new Error('no data');
-  const price = meta.regularMarketPrice;
-  const prev  = meta.chartPreviousClose || meta.previousClose;
-  const chg   = price - prev;
-  const pct   = (chg / prev * 100);
-  return {
-    price,
-    change: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
-    trend: pct > 0.05 ? 'up' : pct < -0.05 ? 'down' : 'flat',
-    currency: meta.currency || 'USD',
-    time: new Date(meta.regularMarketTime * 1000).toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'})
-  };
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=2d&includePrePost=false`;
+
+  const proxyFactories = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  ];
+
+  for (const makeProxy of proxyFactories) {
+    try {
+      const r = await fetch(makeProxy(yahooUrl), { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) continue;
+      const raw = await r.text();
+      let json;
+      try {
+        const parsed = JSON.parse(raw);
+        // allorigins wraps content
+        json = parsed.contents ? JSON.parse(parsed.contents) : parsed;
+      } catch { continue; }
+
+      const meta = json?.chart?.result?.[0]?.meta;
+      if (!meta || !meta.regularMarketPrice) continue;
+
+      const price = meta.regularMarketPrice;
+      const prev  = meta.chartPreviousClose || meta.regularMarketPreviousClose || price;
+      const pct   = prev ? ((price - prev) / prev * 100) : 0;
+
+      return {
+        price,
+        change: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
+        trend: pct > 0.05 ? 'up' : pct < -0.05 ? 'down' : 'flat',
+        currency: meta.currency || 'USD',
+        time: meta.regularMarketTime
+          ? new Date(meta.regularMarketTime * 1000).toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'})
+          : '',
+      };
+    } catch(e) { continue; }
+  }
+  throw new Error('no proxy succeeded for ' + ticker);
 }
 
 function formatPrice(price, currency) {
-  if (!price && price !== 0) return 'N/A';
-  const opts = currency === 'TWD'
-    ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
-    : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-  return new Intl.NumberFormat('en-US', opts).format(price);
+  if (price == null) return 'N/A';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: currency === 'TWD' ? 0 : 2,
+    maximumFractionDigits: currency === 'TWD' ? 0 : 2,
+  }).format(price);
 }
 
 async function loadMarket() {
   const grid = document.getElementById('market-grid');
-  // Show skeleton cards
   grid.innerHTML = MARKET_SYMBOLS.map(s => `
     <div class="market-card" id="mc-${s.ticker.replace(/[^a-z0-9]/gi,'_')}">
       <div class="market-name">${s.label}</div>
       <div class="market-price" style="color:var(--text3)">—</div>
-      <div class="market-change flat">載入中</div>
+      <div class="market-change flat" style="font-size:0.72rem">載入中…</div>
       <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>
     </div>`).join('');
 
-  // Fetch all in parallel, update each card as it arrives
   const promises = MARKET_SYMBOLS.map(async s => {
-    const id = 'mc-' + s.ticker.replace(/[^a-z0-9]/gi,'_');
+    const cardId = 'mc-' + s.ticker.replace(/[^a-z0-9]/gi,'_');
     try {
       const q = await fetchYahooQuote(s.ticker);
-      const priceStr = formatPrice(q.price, q.currency);
-      const cur = q.currency === 'TWD' ? 'TWD' : q.currency === 'USD' ? '$' : q.currency;
-      const card = document.getElementById(id);
+      const sym = q.currency === 'TWD' ? 'NT$' : '$';
+      const card = document.getElementById(cardId);
       if (card) card.innerHTML = `
         <div class="market-name">${s.label}</div>
-        <div class="market-price">${cur} ${priceStr}</div>
+        <div class="market-price">${sym} ${formatPrice(q.price, q.currency)}</div>
         <div class="market-change ${q.trend}">${q.trend==='up'?'▲':q.trend==='down'?'▼':'–'} ${q.change}</div>
         <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>
         <div class="market-time">${q.time}</div>`;
     } catch(e) {
-      const card = document.getElementById(id);
+      const card = document.getElementById(cardId);
       if (card) card.innerHTML = `
         <div class="market-name">${s.label}</div>
         <div class="market-price" style="color:var(--text3)">—</div>
-        <div class="market-change flat" style="color:var(--text3);font-size:0.72rem">無資料</div>
-        <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>`;
+        <div class="market-change flat" style="color:var(--text3);font-size:0.7rem">無法取得</div>
+        <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>
+        <div class="market-time" style="color:#f87171;font-size:0.65rem">proxy 受限</div>`;
     }
   });
 
