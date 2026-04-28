@@ -709,33 +709,13 @@ function showTab(name) {
   }
 }
 
-// ============ CLAUDE API (with web_search) ============
-async function callClaudeSearch(prompt, systemPrompt='') {
-  const body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-    messages: [{role:'user', content: prompt}]
-  };
-  if(systemPrompt) body.system = systemPrompt;
-  const r = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
-  const data = await r.json();
-  // Extract text from all content blocks
-  if(!data.content) throw new Error(data.error?.message || 'API error');
-  return data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-}
-
-async function callClaude(prompt, systemPrompt='') {
+// ============ CLAUDE API (for JP lesson generation only) ============
+async function callClaude(prompt) {
   const body = {
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
     messages: [{role:'user', content: prompt}]
   };
-  if(systemPrompt) body.system = systemPrompt;
   const r = await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -745,93 +725,172 @@ async function callClaude(prompt, systemPrompt='') {
   return data.content?.[0]?.text || '';
 }
 
-// ============ NEWS ============
+// ============ NEWS (RSS via allorigins proxy) ============
+const RSS_FEEDS = {
+  global: [
+    'https://feeds.bbci.co.uk/news/business/rss.xml',
+    'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml',
+  ],
+  taiwan: [
+    'https://www.rti.org.tw/ajax/RSS/index/type/Finance',
+    'https://www.cna.com.tw/rss/dFINANCE.aspx',
+  ]
+};
+
+async function fetchRSS(url) {
+  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const r = await fetch(proxy);
+  const data = await r.json();
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(data.contents, 'text/xml');
+  const items = [...xml.querySelectorAll('item')].slice(0, 4);
+  return items.map(item => ({
+    headline: item.querySelector('title')?.textContent?.trim() || '',
+    summary: (item.querySelector('description')?.textContent || '')
+      .replace(/<[^>]*>/g,'').trim().slice(0, 120) + '…',
+    date: (() => {
+      const raw = item.querySelector('pubDate')?.textContent || '';
+      try { return new Date(raw).toLocaleDateString('zh-TW', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); } catch { return raw.slice(0,16); }
+    })(),
+    link: item.querySelector('link')?.textContent?.trim() || '#',
+    source: xml.querySelector('channel > title')?.textContent?.trim() || ''
+  }));
+}
+
 async function loadNews() {
-  document.getElementById('news-global').innerHTML = '<div class="loader"><div class="spin"></div>搜尋即時新聞中...</div>';
-  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>搜尋即時新聞中...</div>';
+  document.getElementById('news-global').innerHTML = '<div class="loader"><div class="spin"></div>載入國際新聞中...</div>';
+  document.getElementById('news-taiwan').innerHTML = '<div class="loader"><div class="spin"></div>載入台灣新聞中...</div>';
 
-  const today = new Date().toLocaleDateString('zh-TW');
-
-  const globalPrompt = `今天是${today}。請用web_search搜尋「international economy news today」和「global financial news ${new Date().getFullYear()}」，找出3則最新的國際經濟重要新聞。
-搜尋完成後，回傳純JSON陣列（不要其他文字、不要markdown）：
-[{"headline":"新聞標題(中文翻譯)","summary":"2-3句重點摘要(中文)","tag":"主題類別","date":"發布日期","source":"來源媒體"}]`;
-
-  const taiwanPrompt = `今天是${today}。請用web_search搜尋「台灣經濟新聞 ${today}」和「Taiwan economy news today」，找出3則最新的台灣經濟相關新聞。
-搜尋完成後，回傳純JSON陣列（不要其他文字、不要markdown）：
-[{"headline":"新聞標題","summary":"2-3句重點摘要(中文)","tag":"主題類別","date":"發布日期","source":"來源媒體"}]`;
-
-  try {
-    const [g, t] = await Promise.all([
-      callClaudeSearch(globalPrompt),
-      callClaudeSearch(taiwanPrompt)
-    ]);
-    renderNews('news-global', g);
-    renderNews('news-taiwan', t);
-    document.getElementById('news-update-time').textContent = '更新時間：' + new Date().toLocaleTimeString('zh-TW');
-  } catch(e) {
-    document.getElementById('news-global').innerHTML = '<div class="err">載入失敗: '+e.message+'</div>';
-    document.getElementById('news-taiwan').innerHTML = '<div class="err">載入失敗</div>';
+  // Try each feed until one works
+  async function tryFeeds(feeds) {
+    for (const url of feeds) {
+      try {
+        const items = await fetchRSS(url);
+        if (items.length > 0) return items;
+      } catch(e) { continue; }
+    }
+    return null;
   }
+
+  const [globalItems, taiwanItems] = await Promise.all([
+    tryFeeds(RSS_FEEDS.global),
+    tryFeeds(RSS_FEEDS.taiwan)
+  ]);
+
+  renderNewsItems('news-global', globalItems);
+  renderNewsItems('news-taiwan', taiwanItems);
+  document.getElementById('news-update-time').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW');
 }
 
-function renderNews(id, raw) {
-  try {
-    const clean = raw.replace(/```json|```/g,'').trim();
-    // Find JSON array in the text
-    const match = clean.match(/\[[\s\S]*\]/);
-    const items = JSON.parse(match ? match[0] : clean);
-    document.getElementById(id).innerHTML = items.map(n=>`
-      <div class="news-card">
-        <div class="news-card-head">
-          <div class="news-headline">${n.headline}</div>
-          <span class="news-tag">${n.tag}</span>
-        </div>
-        <div class="news-sum">${n.summary}</div>
-        <div class="news-meta">${n.date}${n.source?' · '+n.source:''}</div>
-      </div>`).join('');
-  } catch(e) {
-    document.getElementById(id).innerHTML = '<div class="err">解析失敗，請重試</div>';
-    console.error('News parse error:', e, raw.slice(0,300));
-  }
+// Tag categories from headline keywords
+function guessTag(headline) {
+  const h = headline.toLowerCase();
+  if(/stock|market|nasdaq|s&p|dow|股市/.test(h)) return '股市';
+  if(/trade|tariff|export|import|貿易|關稅/.test(h)) return '貿易';
+  if(/inflation|cpi|price|通膨|物價/.test(h)) return '通膨';
+  if(/fed|interest rate|rate|利率|升息/.test(h)) return '利率';
+  if(/tech|ai|semiconductor|晶片|半導體/.test(h)) return '科技';
+  if(/oil|energy|crude|石油|能源/.test(h)) return '能源';
+  if(/gdp|growth|recession|景氣|成長/.test(h)) return 'GDP';
+  if(/gold|silver|金|銅/.test(h)) return '大宗商品';
+  if(/taiwan|tsmc|台積電|台灣/.test(h)) return '台灣';
+  return '財經';
 }
 
-// ============ MARKET ============
+function renderNewsItems(id, items) {
+  if (!items || items.length === 0) {
+    document.getElementById(id).innerHTML = '<div class="err">無法取得新聞，請稍後重試</div>';
+    return;
+  }
+  document.getElementById(id).innerHTML = items.map(n => `
+    <div class="news-card" onclick="window.open('${n.link}','_blank')" style="cursor:pointer">
+      <div class="news-card-head">
+        <div class="news-headline">${n.headline}</div>
+        <span class="news-tag">${guessTag(n.headline)}</span>
+      </div>
+      <div class="news-sum">${n.summary}</div>
+      <div class="news-meta">${n.date}${n.source ? ' · ' + n.source : ''}</div>
+    </div>`).join('');
+}
+
+// ============ MARKET (Yahoo Finance - CORS friendly) ============
+const MARKET_SYMBOLS = [
+  { ticker: '^GSPC',    name: '標普 500',     label: 'S&P 500' },
+  { ticker: '^IXIC',    name: '那斯達克',      label: 'NASDAQ' },
+  { ticker: '^TWII',    name: '台股加權',      label: 'TAIEX' },
+  { ticker: 'TSM',      name: '台積電 ADR',    label: 'TSM' },
+  { ticker: '2330.TW',  name: '台積電',        label: '2330.TW' },
+  { ticker: 'GC=F',     name: '黃金現貨',      label: 'Gold $/oz' },
+  { ticker: 'HG=F',     name: '銅期貨',        label: 'Copper $/lb' },
+  { ticker: 'TIO=F',    name: '鐵礦石',        label: 'Iron Ore' },
+];
+
+async function fetchYahooQuote(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const r = await fetch(proxy);
+  const outer = await r.json();
+  const data = JSON.parse(outer.contents);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error('no data');
+  const price = meta.regularMarketPrice;
+  const prev  = meta.chartPreviousClose || meta.previousClose;
+  const chg   = price - prev;
+  const pct   = (chg / prev * 100);
+  return {
+    price,
+    change: (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%',
+    trend: pct > 0.05 ? 'up' : pct < -0.05 ? 'down' : 'flat',
+    currency: meta.currency || 'USD',
+    time: new Date(meta.regularMarketTime * 1000).toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'})
+  };
+}
+
+function formatPrice(price, currency) {
+  if (!price && price !== 0) return 'N/A';
+  const opts = currency === 'TWD'
+    ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
+    : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  return new Intl.NumberFormat('en-US', opts).format(price);
+}
+
 async function loadMarket() {
-  document.getElementById('market-grid').innerHTML = '<div class="loader"><div class="spin"></div>搜尋即時報價中...</div>';
+  const grid = document.getElementById('market-grid');
+  // Show skeleton cards
+  grid.innerHTML = MARKET_SYMBOLS.map(s => `
+    <div class="market-card" id="mc-${s.ticker.replace(/[^a-z0-9]/gi,'_')}">
+      <div class="market-name">${s.label}</div>
+      <div class="market-price" style="color:var(--text3)">—</div>
+      <div class="market-change flat">載入中</div>
+      <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>
+    </div>`).join('');
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('zh-TW');
+  // Fetch all in parallel, update each card as it arrives
+  const promises = MARKET_SYMBOLS.map(async s => {
+    const id = 'mc-' + s.ticker.replace(/[^a-z0-9]/gi,'_');
+    try {
+      const q = await fetchYahooQuote(s.ticker);
+      const priceStr = formatPrice(q.price, q.currency);
+      const cur = q.currency === 'TWD' ? 'TWD' : q.currency === 'USD' ? '$' : q.currency;
+      const card = document.getElementById(id);
+      if (card) card.innerHTML = `
+        <div class="market-name">${s.label}</div>
+        <div class="market-price">${cur} ${priceStr}</div>
+        <div class="market-change ${q.trend}">${q.trend==='up'?'▲':q.trend==='down'?'▼':'–'} ${q.change}</div>
+        <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>
+        <div class="market-time">${q.time}</div>`;
+    } catch(e) {
+      const card = document.getElementById(id);
+      if (card) card.innerHTML = `
+        <div class="market-name">${s.label}</div>
+        <div class="market-price" style="color:var(--text3)">—</div>
+        <div class="market-change flat" style="color:var(--text3);font-size:0.72rem">無資料</div>
+        <div class="market-name" style="color:var(--text2);margin-top:0.3rem">${s.name}</div>`;
+    }
+  });
 
-  const prompt = `今天是${dateStr}。請用web_search分別搜尋以下資產的最新即時價格：
-1. 搜尋「S&P 500 price today」
-2. 搜尋「NASDAQ index today」
-3. 搜尋「台股加權指數 今日」
-4. 搜尋「TSM stock price today」（台積電ADR）
-5. 搜尋「2330 股價 今日」（台積電）
-6. 搜尋「gold price per ounce today」
-7. 搜尋「copper price today」
-8. 搜尋「iron ore price today」
-
-搜尋完所有資料後，回傳純JSON陣列（不要其他文字、不要markdown）：
-[{"name":"名稱","ticker":"代號","price":"價格含單位","change":"漲跌幅如+1.2%","trend":"up/down/flat","unit":"貨幣單位","time":"資料時間"}]
-共8筆，順序同上。`;
-
-  try {
-    const raw = await callClaudeSearch(prompt);
-    const match = raw.replace(/```json|```/g,'').match(/\[[\s\S]*\]/);
-    const items = JSON.parse(match ? match[0] : raw.replace(/```json|```/g,'').trim());
-    document.getElementById('market-grid').innerHTML = items.map(m=>`
-      <div class="market-card">
-        <div class="market-name">${m.ticker || ''}</div>
-        <div class="market-price">${m.price}</div>
-        <div class="market-change ${m.trend}">${m.trend==='up'?'▲':m.trend==='down'?'▼':'–'} ${m.change}</div>
-        <div class="market-name" style="margin-top:0.3rem;color:var(--text2)">${m.name}</div>
-        <div class="market-time">${m.time||''}</div>
-      </div>`).join('');
-    document.getElementById('market-update-time').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW');
-  } catch(e) {
-    document.getElementById('market-grid').innerHTML = '<div class="err">載入失敗: '+e.message+'<br><button class="refresh-btn" style="margin-top:0.5rem" onclick="loadMarket()">重試</button></div>';
-  }
+  await Promise.allSettled(promises);
+  document.getElementById('market-update-time').textContent = '更新：' + new Date().toLocaleTimeString('zh-TW');
 }
 
 // ============ JAPANESE ============
@@ -1024,11 +1083,21 @@ const PHRASE_BANK = [
   {phrase:'draw attention to',context:'The report draws attention to key risks.',meaning:'To make people notice something',zh:'引起注意；指出'},
 ];
 
+let vocabQueue = [];
 let currentWord = 0;
 let score = {correct:0, total:0};
 let streak = 0;
 let answered = false;
 let currentPhraseIdx = 0;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function initEnglish() {
   const mode = document.getElementById('en-mode').value;
@@ -1037,16 +1106,22 @@ function initEnglish() {
   currentWord = 0;
   currentPhraseIdx = 0;
   answered = false;
+  vocabQueue = shuffle(VOCAB_BANK); // shuffled, no repeats until full cycle
   if(mode==='vocab') renderVocabQuiz();
   else renderPhrase();
 }
 
 function renderVocabQuiz() {
-  const item = VOCAB_BANK[currentWord % VOCAB_BANK.length];
+  if (currentWord >= vocabQueue.length) {
+    // Completed one full cycle — reshuffle for next round
+    vocabQueue = shuffle(VOCAB_BANK);
+    currentWord = 0;
+  }
+  const item = vocabQueue[currentWord];
   answered = false;
 
   // Shuffle options
-  const opts = [...item.options].sort(()=>Math.random()-0.5);
+  const opts = shuffle(item.options);
 
   document.getElementById('quiz-area').innerHTML = `
     <div class="word-card-big">
@@ -1057,9 +1132,9 @@ function renderVocabQuiz() {
       <div class="word-example">${item.example}</div>
     </div>
 
-    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)">選出正確的中文意思：</div>
+    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)">選出正確的中文意思　${currentWord+1} / ${vocabQueue.length}</div>
     <div class="en-options" id="options">
-      ${opts.map(o=>`<button class="option-btn" onclick="checkAnswer(this,'${o}','${item.zh}')">${o}</button>`).join('')}
+      ${opts.map(o=>`<button class="option-btn" onclick="checkAnswer(this,'${o.replace(/'/g,"\\'")}','${item.zh.replace(/'/g,"\\'")}')">${o}</button>`).join('')}
     </div>
 
     <div class="en-controls">
@@ -1081,9 +1156,7 @@ function checkAnswer(btn, chosen, correct) {
   if(chosen===correct) { btn.classList.add('correct'); score.correct++; streak++; }
   else { btn.classList.add('wrong'); streak=0; }
 
-  // Show answer
-  const area = document.getElementById('quiz-area');
-  const item = VOCAB_BANK[currentWord % VOCAB_BANK.length];
+  const item = vocabQueue[currentWord];
   const zh = document.createElement('div');
   zh.className = 'word-zh';
   zh.textContent = '中文：' + item.zh;
